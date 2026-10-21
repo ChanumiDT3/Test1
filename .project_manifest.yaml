@@ -1,0 +1,161 @@
+overview:
+  project_name: Test1-10000000269
+  description: A predictive maintenance web application where engineers register manufacturing equipment with health-parameter thresholds, log readings, receive automatically prioritised alerts on threshold breaches, and convert them into work orders with parts checklists and closure that resets service dates and thresholds.
+  third_party_services: []
+  sessionStartupCommand: ''
+knowledge_exclude_dirs:
+  - node_modules
+  - dist
+  - build
+  - .git
+  - __pycache__
+  - .pytest_cache
+  - .mypy_cache
+  - .venv
+  - venv
+  - env
+containers:
+  - container_name: maintenance_database
+    description: PostgreSQL database that owns the authoritative schema (users, equipment, health_parameters, alerts, readings, breaches, work_orders, work_order_parts), append-only triggers on readings and breaches, and sample equipment. DDL is applied as individual psql -c statements using the connection in db_connection.txt.
+    interfaces: PostgreSQL wire protocol (connection string published in db_connection.txt) consumed by maintenance_backend
+    container_type: database
+    dependent_containers: []
+    workspace: Test1-10000000269
+    container_root: Test1-10000000269/maintenance_database
+    port: '3002'
+    framework: postgresql
+    visual_edit_enabled: null
+    visual_edit_port: null
+    type: ''
+    buildCommand: ''
+    startCommand: bash startup.sh
+    installCommand: ''
+    testCommand: ''
+    lintCommand: ''
+    lintConfig: ''
+    generateOpenapiCommand: ''
+    working_dir: /home/kavia/workspace/code-generation/Test1-10000000269/maintenance_database
+    routes: []
+    apiSpec: ''
+    auth: null
+    schema: ''
+    migrations: ''
+    seed: ''
+    env: {}
+    container_details:
+      features:
+        - Eight-table maintenance schema using VARCHAR + CHECK enumerations, NUMERIC(14,4) values and TIMESTAMPTZ timestamps
+        - Partial unique index enforcing at most one active alert per health parameter
+        - BEFORE UPDATE OR DELETE triggers making readings and breaches append-only
+        - Idempotent sample data for four machines (CNC-01, CONV-02, PRESS-03, COMP-04) with twelve parameters
+  - container_name: maintenance_backend
+    description: FastAPI REST API that handles equipment and parameter registration, reading logging with synchronous threshold-breach detection, priority-scored alert creation and escalation, one-click work-order conversion, parts checklists, closure with service-date and threshold reset, JWT role-based access, and dashboard metrics.
+    interfaces: HTTP REST JSON API under /api with Bearer JWT authentication, consumed by maintenance_frontend; connects to maintenance_database via SQLAlchemy and psycopg2
+    container_type: backend
+    dependent_containers:
+      - maintenance_database
+    workspace: Test1-10000000269
+    container_root: Test1-10000000269/BackEnd
+    port: '3001'
+    framework: fastapi
+    visual_edit_enabled: null
+    visual_edit_port: null
+    type: ''
+    buildCommand: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+    startCommand: source venv/bin/activate && uvicorn src.api.main:app --host <host> --port <port>
+    installCommand: source venv/bin/activate && pip install -r requirements.txt
+    testCommand: source venv/bin/activate && pytest -q
+    lintCommand: ./../.init/.linter.sh
+    lintConfig: ''
+    generateOpenapiCommand: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && python -m src.api.generate_openapi
+    working_dir: /home/kavia/workspace/code-generation/Test1-10000000269/BackEnd
+    routes: []
+    apiSpec: ''
+    auth:
+      loginEndpoint: /api/auth/login
+      registerEndpoint: ''
+      roles:
+        - engineer
+        - operator
+        - manager
+    schema: ''
+    migrations: ''
+    seed: ''
+    env: {}
+    container_details:
+      endpoints:
+        - POST /api/auth/login - Authenticate and receive a bearer JWT
+        - GET /api/auth/me - Current user profile
+        - GET /api/health - Health check
+        - GET /api/users - List active users (assignee picker)
+        - GET /api/equipment - List equipment with status, active alert count and highest priority
+        - POST /api/equipment - Register equipment with optional nested health parameters
+        - GET /api/equipment/{id} - Equipment detail with parameters
+        - PATCH /api/equipment/{id} - Edit equipment (asset code immutable) or soft-deactivate
+        - POST /api/equipment/{id}/parameters - Add a health parameter
+        - PATCH /api/parameters/{id} - Edit a health parameter
+        - POST /api/readings - Log a reading; detects breaches and creates or escalates alerts in the same transaction
+        - GET /api/equipment/{id}/readings - Reading history, newest first
+        - GET /api/alerts - Prioritised maintenance alert queue
+        - GET /api/alerts/{id} - Alert detail with breaches
+        - POST /api/alerts/{id}/work-order - Idempotent one-click work-order creation
+        - POST /api/alerts/{id}/dismiss - Dismiss an open alert with a reason
+        - GET /api/work-orders - List work orders with filters
+        - GET /api/work-orders/{id} - Work order detail with parts checklist
+        - PATCH /api/work-orders/{id} - Edit assignee, due date, status or fault description
+        - POST /api/work-orders/{id}/parts - Add a parts checklist item
+        - PATCH /api/work-orders/{id}/parts/{part_id} - Edit a parts checklist item
+        - DELETE /api/work-orders/{id}/parts/{part_id} - Remove a parts checklist item
+        - POST /api/work-orders/{id}/close - Close with resolution note and parts used; resets parameter and service date
+        - GET /api/dashboard/summary - Manager dashboard metrics
+      validation:
+        - Duplicate equipment asset codes or parameter names return 409
+        - Parameter thresholds must be greater than 0; kind and asset_code are immutable after creation
+        - A value equal to the threshold is not a breach; service-interval readings below the baseline return 422
+        - Parts availability must be one of yes, no or ordered (otherwise 422)
+        - Closure requires a non-empty resolution note and parts used or an explicit no_parts_used flag (otherwise 422)
+        - Role permission matrix is enforced with 401 for unauthenticated requests and 403 for disallowed roles
+        - Readings and breaches expose no update or delete routes
+  - container_name: maintenance_frontend
+    description: React single-page application for engineers, operators and plant managers, covering equipment register, shop-floor reading logging, alert queue with one-click work-order conversion, work-order detail with parts checklist and closure, and a manager dashboard.
+    interfaces: Browser UI served over HTTP; uses hardcoded in-memory demo data (no backend calls in phase 1)
+    container_type: frontend
+    dependent_containers: []
+    workspace: Test1-10000000269
+    container_root: Test1-10000000269/FrontEnd
+    port: '3000'
+    framework: react
+    visual_edit_enabled: null
+    visual_edit_port: null
+    type: ''
+    buildCommand: npm install && CI=true npm test -- --watchAll=false && CI=true npm run build
+    startCommand: PORT=<port> HOST=<host> BROWSER=none npm start
+    installCommand: npm install
+    testCommand: CI=true npm test -- --watchAll=false
+    lintCommand: npx eslint --max-warnings=0 src
+    lintConfig: ''
+    generateOpenapiCommand: ''
+    working_dir: /home/kavia/workspace/code-generation/Test1-10000000269/FrontEnd
+    routes: []
+    apiSpec: ''
+    auth: null
+    schema: ''
+    migrations: ''
+    seed: ''
+    env: {}
+    container_details:
+      features:
+        - Role switcher (no login in phase 1) and role-filtered navigation for engineer, operator and manager personas
+        - Equipment register with configurable health parameters, criticality and status badges
+        - Shop-floor friendly reading logging with immediate breach and At Risk feedback
+        - Prioritised alert queue with one-click work-order creation and dismissal
+        - Work-order detail with editable assignee and due date, parts checklist (yes/no/ordered) and validated closure
+        - Manager dashboard with equipment status, alert priorities, work-order progress and top at-risk machines
+      colors:
+        primary: '#37474F'
+        secondary: '#546E7A'
+        accent: '#EF6C00'
+        background: '#F5F7FA'
+      theme: light
+      layout_description: Sidebar navigation filtered by role, a top bar with user name, role and logout, and a main content area holding tables, forms and dashboard tiles. Status colours are fixed (Critical #C62828, High #EF6C00, Medium #F9A825, Healthy #2E7D32, At Risk #C62828).
+      style: industrial, neutral, modern and minimalistic

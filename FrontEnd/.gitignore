@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# production build
+build/
+
+# testing
+coverage/
+
+# local environment files
+.env*.local
+
+# logs and OS files
+npm-debug.log*
+.DS_Store
